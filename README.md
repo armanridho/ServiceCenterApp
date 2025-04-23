@@ -46,11 +46,6 @@ Aplikasi manajemen servis (Web & Desktop) untuk membantu proses pendaftaran, pem
 
 ## 🚀 Cara Menjalankan
 
-### Web Version
-1. Clone repository ini
-2. Jalankan backend di XAMPP / Apache / NodeJS server
-3. Akses frontend dari browser
-
 ### Windows Version
 1. Buka folder `Windows/WPF_App` di Visual Studio
 2. Build dan Run
@@ -75,10 +70,6 @@ This software is proprietary and all rights are reserved. Unauthorized use, modi
 Contact for licensing: `admin@armanridho.my.id`
 
 ---
-
-## 🙌 Kontribusi
-
-Tidak menerima kontribusi publik saat ini. Untuk kolaborasi atau penggunaan komersial, silakan hubungi kontak di atas.
 ```
 
 ---
