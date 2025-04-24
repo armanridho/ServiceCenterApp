@@ -1,8 +1,9 @@
-﻿<Window
+﻿<Window 
+        x:Class="ServiceCenterApp.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="ServiceCenterApp.MainWindow"
-        Title="Dashboard Servis" WindowState="Maximized" WindowStyle="SingleBorderWindow" av:DesignWidth="541.38">
+        xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av"
+        Title="Dashboard Servis" WindowState="Maximized" WindowStyle="SingleBorderWindow" av:DesignWidth="679.38">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
     </Window.Resources>
@@ -37,29 +38,79 @@
 
             <!-- Tombol kanan -->
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <Button Content="Setting" Click="Setting_Click" Margin="0,0,10,0"/>
+                <Button Content="Upload" Click="UploadDatabase_Click" Margin="0,0,10,0"/>
+                <Button Content="Download" Click="DownloadDatabase_Click" Margin="0,0,10,0"/>
                 <Button Content="Import Data" Click="ImportData_Click" Margin="0,0,10,0"/>
                 <Button Content="Export Data" Click="ExportData_Click"/>
             </StackPanel>
         </DockPanel>
 
 
-        <DataGrid x:Name="dgServices" AutoGenerateColumns="False" CanUserAddRows="False"
-          Grid.Row="1" Margin="0" HorizontalAlignment="Stretch">
-            <DataGrid.Columns>
-                <!-- Kolom No. pakai auto numbering -->
-                <DataGridTextColumn Header="No." Binding="{Binding RowNumber}" IsReadOnly="True" Width="40" />
-                <DataGridTextColumn Header="Customer" Binding="{Binding CustomerName}" Width="2*" />
-                <DataGridTextColumn Header="Unit" Binding="{Binding Item}" Width="Auto" />
-                <DataGridTextColumn Header="Serial Number" Binding="{Binding SerialNumber}" Width="Auto" />
-                <DataGridTextColumn Header="Status Warranty" Binding="{Binding WarrantyStatus}" Width="Auto" />
-                <DataGridTextColumn Header="Problem" Binding="{Binding Problem}" Width="2*" />
-                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="Auto" />
-                <DataGridTextColumn Header="Tanggal Masuk" Binding="{Binding DateIn}" Width="Auto" />
-                <DataGridTextColumn Header="Tanggal Service" Binding="{Binding ServiceDate}" Width="Auto" />
-                <DataGridTextColumn Header="Tanggal Keluar" Binding="{Binding DateOut}" Width="Auto" />
-                <DataGridTextColumn Header="Lokasi" Binding="{Binding ServiceLocation}" Width="Auto" />
-                <DataGridTextColumn Header="Kelengkapan" Binding="{Binding Accessories}" Width="2*" />
+        <DataGrid x:Name="dgServices" 
+          AutoGenerateColumns="False" 
+          CanUserAddRows="False" 
+          CanUserReorderColumns="False"
+          IsReadOnly="True"
+          HeadersVisibility="Column"
+          Grid.Row="1"
+          Margin="10"
+          HorizontalAlignment="Stretch"
+          VerticalScrollBarVisibility="Auto" 
+          HorizontalScrollBarVisibility="Auto"
+          SelectionChanged="dgServices_SelectionChanged">
 
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="No." Binding="{Binding RowNumber}" Width="Auto" IsReadOnly="True" />
+
+                <DataGridTextColumn Header="Customer" Binding="{Binding CustomerName}" Width="2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextWrapping" Value="Wrap"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <DataGridTextColumn Header="Unit" Binding="{Binding Item}" Width="*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextWrapping" Value="Wrap"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <DataGridTextColumn Header="Serial Number" Binding="{Binding SerialNumber}" Width="2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextWrapping" Value="Wrap"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <DataGridTextColumn Header="Warranty" Binding="{Binding WarrantyStatus}" Width="Auto" />
+
+                <DataGridTextColumn Header="Problem" Binding="{Binding Problem}" Width="2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextWrapping" Value="Wrap"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+
+                <DataGridTextColumn Header="Tanggal Masuk" Binding="{Binding DateIn}" Width="*" />
+                <DataGridTextColumn Header="Tanggal Service" Binding="{Binding ServiceDate}" Width="*" />
+                <DataGridTextColumn Header="Tanggal Keluar" Binding="{Binding DateOut}" Width="*" />
+                <DataGridTextColumn Header="Lokasi" Binding="{Binding ServiceLocation}" Width="*" />
+
+                <DataGridTextColumn Header="Kelengkapan" Binding="{Binding Accessories}" Width="2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextWrapping" Value="Wrap"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
 
                 <DataGridTemplateColumn Header="Action" Width="160">
                     <DataGridTemplateColumn.CellTemplate>

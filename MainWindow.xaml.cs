@@ -10,6 +10,9 @@ using System.IO;
 using System.Linq;
 using ClosedXML.Excel;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Text;
+using ServiceCenterApp.Helpers;
 
 namespace ServiceCenterApp
 {
@@ -18,25 +21,36 @@ namespace ServiceCenterApp
         private DateTime? localLastUpdated = null;
         public MainWindow()
         {
-            InitializeComponent();
-            LoadServices();
-            // Bandingkan dengan data Cloud
-            DbHelper.DownloadCloudDatabase();
-            DateTime? cloudLastUpdated = CheckLastUpdatedCloud();
-
-
-            if (cloudLastUpdated > localLastUpdated)
+            try
             {
-                MessageBox.Show("Ada data baru di Cloud! Silakan lakukan sync manual atau otomatis.");
-            }
-            else
-            {
-                MessageBox.Show("Data lokal sudah paling update.");
-            }
+                InitializeComponent();
 
-            // Set window maximized, tapi tanpa menghilangkan taskbar
-            this.WindowState = WindowState.Maximized;
-            this.WindowStyle = WindowStyle.SingleBorderWindow;
+                // Pindahkan LoadServices ke event Loaded
+                this.Loaded += (s, e) =>
+                {
+                    LoadServices();
+                    // Bandingkan dengan data Cloud
+                    //DbHelper.DownloadCloudDatabase();
+                    //DateTime? cloudLastUpdated = CheckLastUpdatedCloud();
+
+                    //if (cloudLastUpdated > localLastUpdated)
+                    //{
+                    //    MessageBox.Show("Ada data baru di Cloud! Silakan lakukan sync manual atau otomatis.");
+                    //}
+                    //else
+                    //{
+                    //    MessageBox.Show("Data lokal sudah paling update.");
+                    //}
+                };
+
+                this.WindowState = WindowState.Maximized;
+                this.WindowStyle = WindowStyle.SingleBorderWindow;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error initalizing window: {ex.Message}");
+                // Handle error atau close window
+            }
 
             try
             {
@@ -47,15 +61,30 @@ namespace ServiceCenterApp
                 MessageBox.Show("Error saat load data: " + ex.Message);
             }
         }
+        private DateTime? GetDateSafe(IXLCell cell)
+        {
+            if (cell.DataType == XLDataType.DateTime)
+            {
+                return cell.GetDateTime();
+            }
+            else if (DateTime.TryParse(cell.GetValue<string>(), out var result))
+            {
+                return result;
+            }
+            return null;
+        }
+
 
         private DateTime? CheckLastUpdatedCloud()
         {
             DateTime? cloudLastUpdated = null;
             try
             {
-                using (var conn = DbHelper.GetConnectionCloud()) // ganti kalau nama function beda
+                using (var conn = DbHelper.GetConnectionCloud())
                 {
                     conn.Open();
+                    DbHelper.EnsureTableExists(conn); // Cek & buat tabel kalau belum ada
+
                     var query = "SELECT MAX(LastUpdated) FROM Services";
                     cloudLastUpdated = conn.ExecuteScalar<DateTime?>(query);
                 }
@@ -67,8 +96,6 @@ namespace ServiceCenterApp
 
             return cloudLastUpdated;
         }
-
-
         // Nah ini dipindah ke luar
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
@@ -89,6 +116,7 @@ namespace ServiceCenterApp
                 data[i].RowNumber = i + 1;  // Assign nomor urut
             }
 
+            dgServices.ItemsSource = null;
             dgServices.ItemsSource = new ObservableCollection<ServiceEntry>(data);  // Pastikan data di-convert ke ObservableCollection
         }
 
@@ -103,46 +131,123 @@ namespace ServiceCenterApp
         }
         private void LoadServices()
         {
-            using var conn = DbHelper.GetConnection();
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT * FROM Services";
-            using var reader = cmd.ExecuteReader();
-
-            AllServices.Clear();
-            while (reader.Read())
+            try
             {
-                AllServices.Add(new ServiceEntry
+                // Ensure database is properly initialized
+                DbHelper.InitializeDatabase();
+
+                using var conn = DbHelper.GetConnection();
+                conn.Open();
+
+                // Verify table exists (double-check)
+                var tableExists = conn.ExecuteScalar<int>(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='Services'");
+
+                if (tableExists == 0)
                 {
-                    Id = Convert.ToInt32(reader["Id"]),
-                    RowNumber = int.TryParse(reader["RowNumber"]?.ToString(), out var row) ? row : 0,
-                    CustomerName = reader["CustomerName"].ToString(),
-                    Item = reader["Item"].ToString(),
-                    SerialNumber = reader["SerialNumber"].ToString(),
-                    Problem = reader["Problem"].ToString(),
-                    Status = reader["Status"].ToString(),
-                    DateIn = DateTime.TryParse(reader["DateIn"]?.ToString(), out var dIn) ? dIn : (DateTime?)null,
-                    ServiceDate = DateTime.TryParse(reader["ServiceDate"]?.ToString(), out var dService) ? dService : (DateTime?)null,
-                    DateOut = DateTime.TryParse(reader["DateOut"]?.ToString(), out var dOut) ? dOut : (DateTime?)null,
-                    ServiceLocation = reader["ServiceLocation"]?.ToString(),
-                    LastUpdated = DateTime.TryParse(reader["LastUpdated"]?.ToString(), out var dLast) ? dLast : (DateTime?)null,
-                });
+                    MessageBox.Show("Services table doesn't exist. Creating it now...");
+                    DbHelper.InitializeDatabase();
+                    return;
+                }
+
+                // Get list of available columns for debugging
+                var availableColumns = conn.Query<string>(
+                    "SELECT name FROM pragma_table_info('Services')").ToList();
+
+                Debug.WriteLine("Available columns: " + string.Join(", ", availableColumns));
+
+                // Build dynamic query based on available columns
+                var queryBuilder = new StringBuilder("SELECT ");
+                queryBuilder.Append(string.Join(", ", availableColumns));
+                queryBuilder.Append(" FROM Services ORDER BY LastUpdated DESC");
+
+                // Use Dapper's Query<T> for safer mapping
+                var services = conn.Query<ServiceEntry>(queryBuilder.ToString()).ToList();
+
+                // Assign row numbers and handle null values
+                for (int i = 0; i < services.Count; i++)
+                {
+                    var service = services[i];
+                    service.RowNumber = i + 1;
+
+                    // Ensure required fields have defaults
+                    service.CustomerName ??= string.Empty;
+                    service.Item ??= string.Empty;
+
+                    // Handle potential missing columns
+                    if (!availableColumns.Contains("WarrantyStatus")) service.WarrantyStatus = string.Empty;
+                    if (!availableColumns.Contains("Status")) service.Status = string.Empty;
+                    if (!availableColumns.Contains("SerialNumber")) service.SerialNumber = string.Empty;
+                }
+
+                AllServices = new ObservableCollection<ServiceEntry>(services);
+                localLastUpdated = AllServices.Max(s => s.LastUpdated);
+
+                // Cloud sync check with separate error handling
+                //CheckCloudSync();
+
+                dgServices.ItemsSource = AllServices;
+                FilterServices("");
             }
-
-            localLastUpdated = AllServices.Max(s => s.LastUpdated); // global var
-            var cloudLastUpdated = CheckLastUpdatedCloud();
-
-            if (CompareLastUpdated(localLastUpdated, cloudLastUpdated))
+            catch (SQLiteException sqlEx)
             {
-                var result = MessageBox.Show("Data di Cloud lebih baru. Apakah Anda ingin melakukan sinkronisasi sekarang?", "Sinkronisasi Data", MessageBoxButton.YesNo);
-                if (result == MessageBoxResult.Yes)
+                HandleDatabaseError(sqlEx);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading services: {ex.Message}");
+                Debug.WriteLine($"ERROR DETAILS: {ex}");
+            }
+        }
+
+        private void CheckCloudSync()
+        {
+            try
+            {
+                var cloudLastUpdated = CheckLastUpdatedCloud();
+                if (CompareLastUpdated(localLastUpdated, cloudLastUpdated))
                 {
-                    SyncToLocal();
+                    var result = MessageBox.Show("Data di Cloud lebih baru. Apakah Anda ingin melakukan sinkronisasi sekarang?",
+                        "Sinkronisasi Data", MessageBoxButton.YesNo);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        SyncToLocal();
+                        // Refresh after sync
+                        LoadServices();
+                    }
                 }
             }
-            dgServices.ItemsSource = AllServices; // <- ini diganti dari 'list' ke 'AllServices'
-            FilterServices(""); // tampilkan semua awalnya
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Gagal memeriksa pembaruan cloud: {ex.Message}");
+            }
         }
+
+        private void HandleDatabaseError(SQLiteException ex)
+        {
+            if (ex.Message.Contains("no such table"))
+            {
+                MessageBox.Show("Database table missing. Attempting to recreate...");
+                DbHelper.InitializeDatabase();
+                LoadServices(); // Retry
+            }
+            else if (ex.Message.Contains("no such column"))
+            {
+                MessageBox.Show("Database schema outdated. Attempting to update...");
+                using (var conn = DbHelper.GetConnection())
+                {
+                    conn.Open();
+                    DbHelper.AddMissingColumns(conn); // Pass the required 'conn' parameter
+                }
+                LoadServices(); // Retry
+            }
+            else
+            {
+                MessageBox.Show($"Database error: {ex.Message}");
+            }
+        }
+
 
 
         private void FilterServices(string keyword)
@@ -181,45 +286,50 @@ namespace ServiceCenterApp
 
             if (saveFileDialog.ShowDialog() == true)
             {
-                using var workbook = new ClosedXML.Excel.XLWorkbook();
+                using var workbook = new XLWorkbook();
                 var worksheet = workbook.Worksheets.Add("Services");
 
-                // Header
-                worksheet.Cell(1, 1).Value = "Id";
-                worksheet.Cell(1, 2).Value = "RowNumber";
-                worksheet.Cell(1, 3).Value = "Customer Name";
-                worksheet.Cell(1, 4).Value = "Serial Number";  // Menambahkan header serial number
-                worksheet.Cell(1, 5).Value = "Item";
-                worksheet.Cell(1, 6).Value = "Problem";
-                worksheet.Cell(1, 7).Value = "Status";
-                worksheet.Cell(1, 8).Value = "Date In";
-                worksheet.Cell(1, 9).Value = "Service Date";
-                worksheet.Cell(1, 10).Value = "Date Out";
-                worksheet.Cell(1, 11).Value = "Service Location";
+                // Header (ditulis hanya sekali)
+                worksheet.Cell(1, 1).Value = "Customer Name";
+                worksheet.Cell(1, 2).Value = "Item";
+                worksheet.Cell(1, 3).Value = "Serial Number";
+                worksheet.Cell(1, 4).Value = "Warranty Status";
+                worksheet.Cell(1, 5).Value = "Problem";
+                worksheet.Cell(1, 6).Value = "Status";
+                worksheet.Cell(1, 7).Value = "Date In";
+                worksheet.Cell(1, 8).Value = "Service Date";
+                worksheet.Cell(1, 9).Value = "Date Out";
+                worksheet.Cell(1, 10).Value = "Service Location";
+                worksheet.Cell(1, 11).Value = "Accessories";
                 worksheet.Cell(1, 12).Value = "Last Updated";
 
+                using var conn = DbHelper.GetConnection();
+                var services = conn.Query<ServiceEntry>("SELECT * FROM Services").ToList();
+
                 int row = 2;
-                foreach (ServiceEntry entry in dgServices.ItemsSource)
+                foreach (var s in services)
                 {
-                    worksheet.Cell(1, 1).Value = "Id";
-                    worksheet.Cell(1, 2).Value = "RowNumber";
-                    worksheet.Cell(1, 3).Value = "Customer Name";
-                    worksheet.Cell(1, 4).Value = "Serial Number";  // Menambahkan header serial number
-                    worksheet.Cell(1, 5).Value = "Item";
-                    worksheet.Cell(1, 6).Value = "Problem";
-                    worksheet.Cell(1, 7).Value = "Status";
-                    worksheet.Cell(1, 8).Value = "Date In";
-                    worksheet.Cell(1, 9).Value = "Service Date";
-                    worksheet.Cell(1, 10).Value = "Date Out";
-                    worksheet.Cell(1, 11).Value = "Service Location";
-                    worksheet.Cell(1, 12).Value = "Last Updated";
+                    worksheet.Cell(row, 1).Value = s.CustomerName;
+                    worksheet.Cell(row, 2).Value = s.Item;
+                    worksheet.Cell(row, 3).Value = s.SerialNumber;
+                    worksheet.Cell(row, 4).Value = s.WarrantyStatus;
+                    worksheet.Cell(row, 5).Value = s.Problem;
+                    worksheet.Cell(row, 6).Value = s.Status;
+                    worksheet.Cell(row, 7).Value = s.DateIn?.ToString("dd-MM-yyyy");
+                    worksheet.Cell(row, 8).Value = s.ServiceDate?.ToString("dd-MM-yyyy");
+                    worksheet.Cell(row, 9).Value = s.DateOut?.ToString("dd-MM-yyyy");
+                    worksheet.Cell(row, 10).Value = s.ServiceLocation;
+                    worksheet.Cell(row, 11).Value = s.Accessories;
+                    worksheet.Cell(row, 12).Value = s.LastUpdated?.ToString("dd-MM-yyyy");
                     row++;
                 }
 
+                worksheet.Columns().AdjustToContents();
                 workbook.SaveAs(saveFileDialog.FileName);
                 MessageBox.Show("Data berhasil diexport ke Excel!");
             }
         }
+
 
         private void ImportData_Click(object sender, RoutedEventArgs e)
         {
@@ -251,34 +361,64 @@ namespace ServiceCenterApp
                 {
                     imported.Add(new ServiceEntry
                     {
-                        CustomerName = row.Cell(2).GetString(),
-                        RowNumber = row.RowNumber(),
-                        Item = row.Cell(4).GetString(),
-                        SerialNumber = row.Cell(5).GetString(),
-                        Problem = row.Cell(6).GetString(),
-                        Status = row.Cell(7).GetString(),
-                        DateIn = GetDateSafe(row.Cell(8)),
-                        ServiceDate = GetDateSafe(row.Cell(9)),
-                        DateOut = GetDateSafe(row.Cell(10)),
-                        ServiceLocation = row.Cell(11).GetString(),
+                        CustomerName = row.Cell(1).GetString(),
+                        Item = row.Cell(2).GetString(),
+                        SerialNumber = row.Cell(3).GetString(),
+                        WarrantyStatus = row.Cell(4).GetString(),
+                        Problem = row.Cell(5).GetString(),
+                        Status = row.Cell(6).GetString(),
+                        DateIn = GetDateSafe(row.Cell(7)),
+                        ServiceDate = GetDateSafe(row.Cell(8)),
+                        DateOut = GetDateSafe(row.Cell(9)),
+                        ServiceLocation = row.Cell(10).GetString(),
+                        Accessories = row.Cell(11).GetString(),
                         LastUpdated = GetDateSafe(row.Cell(12))
                     });
                 }
 
                 using var conn = DbHelper.GetConnection();
                 conn.Open();
-                foreach (var entry in imported)
+
+                foreach (var service in imported)
                 {
-                    conn.Execute(@"
-        INSERT INTO Services 
-        (RowNumber, CustomerName, Item, Problem, Status, DateIn, ServiceDate, DateOut, ServiceLocation, LastUpdated)
-        VALUES 
-        (@RowNumber, @CustomerName, @Item, @Problem, @Status, @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @LastUpdated)", entry);
+                    var existing = conn.QueryFirstOrDefault<int>(
+                        "SELECT COUNT(*) FROM Services WHERE Id = @Id", new { service.Id });
+
+                    if (existing == 0)
+                    {
+                        conn.Execute(@"INSERT INTO Services 
+                                    (CustomerName, Item, SerialNumber, WarrantyStatus, Problem, Status,
+                                    DateIn, ServiceDate, DateOut, ServiceLocation, Accessories, LastUpdated)
+                                    VALUES 
+                                    (@CustomerName, @Item, @SerialNumber, @WarrantyStatus, @Problem, @Status,
+                                    @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @Accessories, @LastUpdated)", service);
+
+                    }
+                    else
+                    {
+                        conn.Execute(@"UPDATE Services SET
+                        CustomerName = @CustomerName,
+                        Item = @Item,
+                        WarrantyStatus = @WarrantyStatus,
+                        Problem = @Problem,
+                        Status = @Status,
+                        DateIn = @DateIn,
+                        ServiceDate = @ServiceDate,
+                        DateOut = @DateOut,
+                        ServiceLocation = @ServiceLocation,
+                        Accessories = @Accessories,
+                        LastUpdated = @LastUpdated
+                        WHERE SerialNumber = @SerialNumber", service);
+                    }
                 }
 
-
+                LoadServices();
+                dgServices.UpdateLayout();
+                foreach (var col in dgServices.Columns)
+                {
+                    col.Width = new DataGridLength(1, DataGridLengthUnitType.Auto);
+                }
                 MessageBox.Show("Data berhasil diimport dari Excel!");
-                LoadData();
             }
         }
         private void dgServices_LoadingRow(object sender, DataGridRowEventArgs e)
@@ -301,63 +441,97 @@ namespace ServiceCenterApp
                 }
             }
         }
-        private bool CompareLastUpdated(DateTime? localLastUpdated, DateTime? cloudLastUpdated)
+        private bool CompareLastUpdated(DateTime? local, DateTime? cloud)
         {
-            if (cloudLastUpdated > localLastUpdated)
-            {
-                return true; // Cloud lebih baru, butuh sinkronisasi
-            }
-            return false; // Data lokal sudah paling update
+            if (cloud == null) return false;
+            if (local == null) return true;
+
+            return cloud > local;
         }
+
         private void SyncToLocal()
         {
             try
             {
-                using (var conn = DbHelper.GetConnectionCloud())
-                {
-                    conn.Open();
-                    var query = "SELECT * FROM Services"; // Query yang sesuai dengan struktur cloud
-                    var data = conn.Query<ServiceEntry>(query).ToList();
+                using var cloudConn = DbHelper.GetConnectionCloud();
+                using var localConn = DbHelper.GetConnection();
+                cloudConn.Open();
+                localConn.Open();
 
-                    using (var localConn = DbHelper.GetConnection())
+                var cloudData = cloudConn.Query<ServiceEntry>("SELECT * FROM Services").ToList();
+
+                foreach (var service in cloudData)
+                {
+                    var existing = localConn.QueryFirstOrDefault<int>("SELECT COUNT(*) FROM Services WHERE Id = @Id", new { service.Id });
+
+                    if (existing == 0)
                     {
-                        localConn.Open();
-                        foreach (var entry in data)
-                        {
-                            // Check apakah entry sudah ada di local, jika tidak insert
-                            var exists = localConn.ExecuteScalar<int>("SELECT COUNT(1) FROM Services WHERE Id = @Id", new { entry.Id });
-                            if (exists == 0)
-                            {
-                                localConn.Execute(@"INSERT INTO Services (Id, RowNumber, CustomerName, Item, SerialNumber, Problem, Status, DateIn, ServiceDate, DateOut, ServiceLocation, LastUpdated)
-                                             VALUES (@Id, @RowNumber, @CustomerName, @Item, @SerialNumber, @Problem, @Status, @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @LastUpdated)", entry);
-                            }
-                            else
-                            {
-                                // Update data lokal jika ada perubahan
-                                localConn.Execute(@"UPDATE Services SET 
-                                             RowNumber = @RowNumber,
-                                             CustomerName = @CustomerName,
-                                             Item = @Item,
-                                             SerialNumber = @SerialNumber,
-                                             Problem = @Problem,
-                                             Status = @Status,
-                                             DateIn = @DateIn,
-                                             ServiceDate = @ServiceDate,
-                                             DateOut = @DateOut,
-                                             ServiceLocation = @ServiceLocation,
-                                             LastUpdated = @LastUpdated
-                                             WHERE Id = @Id", entry);
-                            }
-                        }
+                        localConn.Execute(@"INSERT INTO Services 
+                            (Id, RowNumber, CustomerName, Item, SerialNumber, WarrantyStatus, Problem, Status,
+                             DateIn, ServiceDate, DateOut, ServiceLocation, Accessories, LastUpdated)
+                            VALUES 
+                            (@Id, @RowNumber, @CustomerName, @Item, @SerialNumber, @WarrantyStatus, @Problem, @Status,
+                             @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @Accessories, @LastUpdated)", service);
+                    }
+                    else
+                    {
+                        localConn.Execute(@"UPDATE Services SET
+                            RowNumber = @RowNumber,
+                            CustomerName = @CustomerName,
+                            Item = @Item,
+                            SerialNumber = @SerialNumber,
+                            WarrantyStatus = @WarrantyStatus,
+                            Problem = @Problem,
+                            Status = @Status,
+                            DateIn = @DateIn,
+                            ServiceDate = @ServiceDate,
+                            DateOut = @DateOut,
+                            ServiceLocation = @ServiceLocation,
+                            Accessories = @Accessories,
+                            LastUpdated = @LastUpdated
+                            WHERE Id = @Id", service);
                     }
                 }
-                MessageBox.Show("Sinkronisasi selesai!");
+
+                LoadServices();
+                MessageBox.Show("Sinkronisasi dari Cloud berhasil!");
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Terjadi error saat sinkronisasi: " + ex.Message);
+                MessageBox.Show("Gagal sinkronisasi: " + ex.Message);
             }
         }
 
+        private void dgServices_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+
+        }
+
+        private void UploadDatabase_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                CloudSync.UploadModifiedRowsToCloud();
+                MessageBox.Show("Upload ke cloud berhasil.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal upload database ke cloud: " + ex.Message);
+            }
+        }
+
+        private void DownloadDatabase_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                CloudSync.DownloadCloudDatabase();
+                LoadServices();
+                MessageBox.Show("Download dari cloud berhasil.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal download database dari cloud: " + ex.Message);
+            }
+        }
     }
 }
