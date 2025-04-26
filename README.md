@@ -3,19 +3,14 @@
 ```markdown
 # 🔧 Service Center Management App
 
-Aplikasi manajemen servis (Web & Desktop) untuk membantu proses pendaftaran, pemantauan, dan penyelesaian layanan perbaikan elektronik, laptop, HP, atau unit lainnya secara efisien dan terstruktur.
+Aplikasi manajemen servis (Web & Desktop) untuk membantu proses
+- pendaftaran,
+- pemantauan, dan
+- penyelesaian layanan perbaikan Barang (tidak terkait dengan segment apapun)
 
 ---
 
 ## 📦 Fitur Utama
-
-### 🌐 Web Version (Frontend + Backend)
-- Pendaftaran unit service
-- Manajemen teknisi
-- Status tracking dengan update real-time
-- Notifikasi (WA/SMS - opsional)
-- Login role-based: Admin, Teknisi
-- Invoice otomatis (generate saat unit selesai)
 
 ### 💻 Windows Desktop Version (WPF)
 - Dropdown pencarian unit (Brand & Tipe)
@@ -43,11 +38,20 @@ Aplikasi manajemen servis (Web & Desktop) untuk membantu proses pendaftaran, pem
 
 
 ---
-
-## 🚀 Cara Menjalankan
+## Cara Menjalankan Aplikasi
 
 ### Windows Version
-1. Buka folder `Windows/WPF_App` di Visual Studio
+1. Download Release dan extract
+2. Run file .exe
+3. Aplikasi akan berjalan dalam mode desktop
+
+
+## Cara Build Project
+
+### Windows Version
+1. Clone This Project
+2. Buka foldernya
+4. Jalankan file .sln
 2. Build dan Run
 3. Aplikasi akan berjalan dalam mode desktop
 
@@ -55,19 +59,17 @@ Aplikasi manajemen servis (Web & Desktop) untuk membantu proses pendaftaran, pem
 
 ## 📋 Catatan
 
-- Database menggunakan MySQL/MariaDB (bisa disesuaikan)
-- File konfigurasi berada di folder `config/`
-- Untuk integrasi notifikasi WA/SMS, diperlukan setup API eksternal (disarankan pakai Wablas atau Twilio)
+- Database menggunakan SQLite
 
 ---
 
 ## 📄 License
 
 **Copyright © 2025  
-Arman Ridho**
+Arman Ridho maulana**
 
-This software is proprietary and all rights are reserved. Unauthorized use, modification, or distribution is strictly prohibited without permission.  
-Contact for licensing: `admin@armanridho.my.id`
+This software is proprietary and all rights are reserved. This is Free and Not For Sale. 
+Always respect copyright if you re-publish or modify app
 
 ---
 ```

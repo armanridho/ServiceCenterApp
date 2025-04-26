@@ -13,6 +13,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Text;
 using ServiceCenterApp.Helpers;
+using System.Threading.Tasks;
 
 namespace ServiceCenterApp
 {
@@ -61,19 +62,6 @@ namespace ServiceCenterApp
                 MessageBox.Show("Error saat load data: " + ex.Message);
             }
         }
-        private DateTime? GetDateSafe(IXLCell cell)
-        {
-            if (cell.DataType == XLDataType.DateTime)
-            {
-                return cell.GetDateTime();
-            }
-            else if (DateTime.TryParse(cell.GetValue<string>(), out var result))
-            {
-                return result;
-            }
-            return null;
-        }
-
 
         private DateTime? CheckLastUpdatedCloud()
         {
@@ -330,8 +318,25 @@ namespace ServiceCenterApp
             }
         }
 
+        private string SafeGetString(IXLCell cell)
+        {
+            return cell?.GetString() ?? string.Empty;
+        }
 
-        private void ImportData_Click(object sender, RoutedEventArgs e)
+        private DateTime? SafeGetDate(IXLCell cell)
+        {
+            if (cell == null || cell.IsEmpty())
+                return null;
+
+            if (cell.DataType == XLDataType.DateTime)
+                return cell.GetDateTime();
+
+            if (DateTime.TryParse(cell.GetString(), out var result))
+                return result;
+
+            return null;
+        }
+        private async void ImportData_Click(object sender, RoutedEventArgs e)
         {
             var openFileDialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -340,91 +345,136 @@ namespace ServiceCenterApp
 
             if (openFileDialog.ShowDialog() == true)
             {
-                var imported = new List<ServiceEntry>();
-
-                using var stream = new FileStream(openFileDialog.FileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
-                var worksheet = workbook.Worksheet(1); // ambil sheet pertama
-
-                DateTime? GetDateSafe(IXLCell cell)
+                try
                 {
-                    if (cell.DataType == XLDataType.DateTime)
-                        return cell.GetDateTime();
 
-                    if (DateTime.TryParse(cell.GetString(), out var parsed))
-                        return parsed;
+                    var imported = new List<ServiceEntry>();
 
-                    return null; // atau bisa juga DateTime.MinValue kalau kamu butuh default
-                }
+                    using var stream = new FileStream(openFileDialog.FileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
+                    var worksheet = workbook.Worksheet(1);
+                    var rows = worksheet.RowsUsed().Skip(1).ToList(); // Skip header
+                    int totalRows = rows.Count;
+                    int currentRow = 0;
 
-                foreach (var row in worksheet.RowsUsed().Skip(1))
-                {
-                    imported.Add(new ServiceEntry
+                    progressContainer.Visibility = Visibility.Visible;
+                    progressBar.Value = 0;
+                    progressText.Text = "Progress: 0%";
+
+                    await Task.Run(() =>
                     {
-                        CustomerName = row.Cell(1).GetString(),
-                        Item = row.Cell(2).GetString(),
-                        SerialNumber = row.Cell(3).GetString(),
-                        WarrantyStatus = row.Cell(4).GetString(),
-                        Problem = row.Cell(5).GetString(),
-                        Status = row.Cell(6).GetString(),
-                        DateIn = GetDateSafe(row.Cell(7)),
-                        ServiceDate = GetDateSafe(row.Cell(8)),
-                        DateOut = GetDateSafe(row.Cell(9)),
-                        ServiceLocation = row.Cell(10).GetString(),
-                        Accessories = row.Cell(11).GetString(),
-                        LastUpdated = GetDateSafe(row.Cell(12))
+
+                        DateTime? GetDateSafe(IXLCell cell)
+                        {
+                            if (cell == null || cell.IsEmpty())
+                                return null;
+
+                            if (cell.DataType == XLDataType.DateTime)
+                                return cell.GetDateTime();
+
+                            if (DateTime.TryParse(cell.GetString(), out var result))
+                                return result;
+
+                            return null;
+                        }
+
+                        foreach (var row in rows)
+                        {
+                            var entry = new ServiceEntry
+                            {
+                                CustomerName = SafeGetString(row.Cell(1)),
+                                Item = SafeGetString(row.Cell(2)),
+                                SerialNumber = SafeGetString(row.Cell(3)),
+                                WarrantyStatus = SafeGetString(row.Cell(4)),
+                                Problem = SafeGetString(row.Cell(5)),
+                                Status = SafeGetString(row.Cell(6)),
+                                DateIn = GetDateSafe(row.Cell(7)),
+                                ServiceDate = GetDateSafe(row.Cell(8)),
+                                DateOut = GetDateSafe(row.Cell(9)),
+                                ServiceLocation = SafeGetString(row.Cell(10)),
+                                Accessories = SafeGetString(row.Cell(11)),
+                                LastUpdated = GetDateSafe(row.Cell(12))
+                            };
+
+                            imported.Add(entry);
+
+                            currentRow++;
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                double percent = (currentRow / (double)totalRows) * 100;
+                                progressBar.Value = percent;
+                                progressText.Text = $"Progress: {Math.Round(percent)}%";
+                            });
+                        }
                     });
-                }
+                    progressContainer.Visibility = Visibility.Collapsed;
 
-                using var conn = DbHelper.GetConnection();
-                conn.Open();
+                    using var conn = DbHelper.GetConnection();
+                    conn.Open();
 
-                foreach (var service in imported)
-                {
-                    var existing = conn.QueryFirstOrDefault<int>(
-                        "SELECT COUNT(*) FROM Services WHERE Id = @Id", new { service.Id });
-
-                    if (existing == 0)
+                    using (var transaction = conn.BeginTransaction()) // 🔥 wrap with transaction
                     {
-                        conn.Execute(@"INSERT INTO Services 
-                                    (CustomerName, Item, SerialNumber, WarrantyStatus, Problem, Status,
-                                    DateIn, ServiceDate, DateOut, ServiceLocation, Accessories, LastUpdated)
-                                    VALUES 
-                                    (@CustomerName, @Item, @SerialNumber, @WarrantyStatus, @Problem, @Status,
-                                    @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @Accessories, @LastUpdated)", service);
+                        foreach (var service in imported)
+                        {
+                            var existing = conn.QueryFirstOrDefault<int>(
+                                "SELECT COUNT(*) FROM Services WHERE SerialNumber = @SerialNumber",
+                                new { service.SerialNumber },
+                                transaction: transaction // 🔥 penting
+                            );
 
+                            if (existing == 0)
+                            {
+                                conn.Execute(@"INSERT INTO Services 
+                (CustomerName, Item, SerialNumber, WarrantyStatus, Problem, Status,
+                 DateIn, ServiceDate, DateOut, ServiceLocation, Accessories, LastUpdated)
+                VALUES 
+                (@CustomerName, @Item, @SerialNumber, @WarrantyStatus, @Problem, @Status,
+                 @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @Accessories, @LastUpdated)",
+                                    service, transaction: transaction);
+                            }
+                            else
+                            {
+                                conn.Execute(@"UPDATE Services SET
+                CustomerName = @CustomerName,
+                Item = @Item,
+                WarrantyStatus = @WarrantyStatus,
+                Problem = @Problem,
+                Status = @Status,
+                DateIn = @DateIn,
+                ServiceDate = @ServiceDate,
+                DateOut = @DateOut,
+                ServiceLocation = @ServiceLocation,
+                Accessories = @Accessories,
+                LastUpdated = @LastUpdated
+                WHERE SerialNumber = @SerialNumber",
+                                    service, transaction: transaction);
+                            }
+                        }
+
+                        transaction.Commit(); // 🔥 baru commit semua sekaligus
                     }
-                    else
+
+
+                    LoadServices();
+                    dgServices.UpdateLayout();
+                    foreach (var col in dgServices.Columns)
                     {
-                        conn.Execute(@"UPDATE Services SET
-                        CustomerName = @CustomerName,
-                        Item = @Item,
-                        WarrantyStatus = @WarrantyStatus,
-                        Problem = @Problem,
-                        Status = @Status,
-                        DateIn = @DateIn,
-                        ServiceDate = @ServiceDate,
-                        DateOut = @DateOut,
-                        ServiceLocation = @ServiceLocation,
-                        Accessories = @Accessories,
-                        LastUpdated = @LastUpdated
-                        WHERE SerialNumber = @SerialNumber", service);
+                        col.Width = new DataGridLength(1, DataGridLengthUnitType.Auto);
                     }
-                }
 
-                LoadServices();
-                dgServices.UpdateLayout();
-                foreach (var col in dgServices.Columns)
-                {
-                    col.Width = new DataGridLength(1, DataGridLengthUnitType.Auto);
+                    MessageBox.Show($"Berhasil import {imported.Count} data dari Excel!");
+                    progressBar.Value = 0;
+                    progressText.Text = "Progress: 0%";
                 }
-                MessageBox.Show("Data berhasil diimport dari Excel!");
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Gagal import: " + ex.Message);
+                }
             }
         }
-        private void dgServices_LoadingRow(object sender, DataGridRowEventArgs e)
-        {
-            e.Row.Header = (e.Row.GetIndex() + 1).ToString();
-        }
+
+
 
         private void DeleteService_Click(object sender, RoutedEventArgs e)
         {
@@ -533,5 +583,13 @@ namespace ServiceCenterApp
                 MessageBox.Show("Gagal download database dari cloud: " + ex.Message);
             }
         }
+
+        private void Setting_Click(object sender, RoutedEventArgs e)
+        {
+            var settingWindow = new SettingWindow();
+            settingWindow.Owner = this;
+            settingWindow.ShowDialog();
+        }
+
     }
 }
