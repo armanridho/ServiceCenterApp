@@ -38,7 +38,6 @@
 
             <!-- Tombol kanan -->
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <Button Content="Setting" Click="Setting_Click" Margin="0,0,10,0"/>
                 <Button Content="Upload" Click="UploadDatabase_Click" Margin="0,0,10,0"/>
                 <Button Content="Download" Click="DownloadDatabase_Click" Margin="0,0,10,0"/>
                 <Button Content="Import Data" Click="ImportData_Click" Margin="0,0,10,0"/>
