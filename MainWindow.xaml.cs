@@ -14,6 +14,7 @@ using System.Diagnostics;
 using System.Text;
 using ServiceCenterApp.Helpers;
 using System.Threading.Tasks;
+using System.Globalization;
 
 namespace ServiceCenterApp
 {
@@ -25,23 +26,9 @@ namespace ServiceCenterApp
             try
             {
                 InitializeComponent();
-
-                // Pindahkan LoadServices ke event Loaded
                 this.Loaded += (s, e) =>
                 {
                     LoadServices();
-                    // Bandingkan dengan data Cloud
-                    //DbHelper.DownloadCloudDatabase();
-                    //DateTime? cloudLastUpdated = CheckLastUpdatedCloud();
-
-                    //if (cloudLastUpdated > localLastUpdated)
-                    //{
-                    //    MessageBox.Show("Ada data baru di Cloud! Silakan lakukan sync manual atau otomatis.");
-                    //}
-                    //else
-                    //{
-                    //    MessageBox.Show("Data lokal sudah paling update.");
-                    //}
                 };
 
                 this.WindowState = WindowState.Maximized;
@@ -121,15 +108,16 @@ namespace ServiceCenterApp
         {
             try
             {
-                // Ensure database is properly initialized
                 DbHelper.InitializeDatabase();
-
                 using var conn = DbHelper.GetConnection();
                 conn.Open();
-
-                // Verify table exists (double-check)
                 var tableExists = conn.ExecuteScalar<int>(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='Services'");
+                var services = conn.Query<ServiceEntry>("SELECT * FROM Services ORDER BY LastUpdated DESC").ToList();
+
+                // Reset filter
+                SearchBox.Text = "";
+                FilterServices("");
 
                 if (tableExists == 0)
                 {
@@ -148,9 +136,6 @@ namespace ServiceCenterApp
                 var queryBuilder = new StringBuilder("SELECT ");
                 queryBuilder.Append(string.Join(", ", availableColumns));
                 queryBuilder.Append(" FROM Services ORDER BY LastUpdated DESC");
-
-                // Use Dapper's Query<T> for safer mapping
-                var services = conn.Query<ServiceEntry>(queryBuilder.ToString()).ToList();
 
                 // Assign row numbers and handle null values
                 for (int i = 0; i < services.Count; i++)
@@ -236,16 +221,20 @@ namespace ServiceCenterApp
             }
         }
 
-
-
         private void FilterServices(string keyword)
         {
-            var filtered = AllServices
-    .Where(x => x.CustomerName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0
-             || x.Item.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0
-             || x.Status.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
-    .ToList();
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                dgServices.ItemsSource = AllServices;
+                return;
+            }
 
+            var filtered = AllServices
+                .Where(x => (x.CustomerName != null && x.CustomerName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                         || (x.Item != null && x.Item.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                         || (x.Status != null && x.Status.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                         || (x.SerialNumber != null && x.SerialNumber.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0))
+                .ToList();
 
             FilteredServices.Clear();
             foreach (var entry in filtered)
@@ -322,20 +311,6 @@ namespace ServiceCenterApp
         {
             return cell?.GetString() ?? string.Empty;
         }
-
-        private DateTime? SafeGetDate(IXLCell cell)
-        {
-            if (cell == null || cell.IsEmpty())
-                return null;
-
-            if (cell.DataType == XLDataType.DateTime)
-                return cell.GetDateTime();
-
-            if (DateTime.TryParse(cell.GetString(), out var result))
-                return result;
-
-            return null;
-        }
         private async void ImportData_Click(object sender, RoutedEventArgs e)
         {
             var openFileDialog = new Microsoft.Win32.OpenFileDialog
@@ -347,13 +322,14 @@ namespace ServiceCenterApp
             {
                 try
                 {
-
                     var imported = new List<ServiceEntry>();
+                    int duplicateCount = 0;
+                    int emptyDateCount = 0;
 
                     using var stream = new FileStream(openFileDialog.FileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                     using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
                     var worksheet = workbook.Worksheet(1);
-                    var rows = worksheet.RowsUsed().Skip(1).ToList(); // Skip header
+                    var rows = worksheet.RowsUsed().Skip(1).ToList();
                     int totalRows = rows.Count;
                     int currentRow = 0;
 
@@ -363,21 +339,6 @@ namespace ServiceCenterApp
 
                     await Task.Run(() =>
                     {
-
-                        DateTime? GetDateSafe(IXLCell cell)
-                        {
-                            if (cell == null || cell.IsEmpty())
-                                return null;
-
-                            if (cell.DataType == XLDataType.DateTime)
-                                return cell.GetDateTime();
-
-                            if (DateTime.TryParse(cell.GetString(), out var result))
-                                return result;
-
-                            return null;
-                        }
-
                         foreach (var row in rows)
                         {
                             var entry = new ServiceEntry
@@ -388,18 +349,17 @@ namespace ServiceCenterApp
                                 WarrantyStatus = SafeGetString(row.Cell(4)),
                                 Problem = SafeGetString(row.Cell(5)),
                                 Status = SafeGetString(row.Cell(6)),
-                                DateIn = GetDateSafe(row.Cell(7)),
-                                ServiceDate = GetDateSafe(row.Cell(8)),
-                                DateOut = GetDateSafe(row.Cell(9)),
+                                DateIn = ParseDateWithMultipleFormats(row.Cell(7)),
+                                ServiceDate = ParseDateWithMultipleFormats(row.Cell(8)),
+                                DateOut = ParseDateWithMultipleFormats(row.Cell(9)),
                                 ServiceLocation = SafeGetString(row.Cell(10)),
                                 Accessories = SafeGetString(row.Cell(11)),
-                                LastUpdated = GetDateSafe(row.Cell(12))
+                                LastUpdated = DateTime.Now // Gunakan waktu sekarang sebagai last updated
                             };
 
                             imported.Add(entry);
 
                             currentRow++;
-
                             Dispatcher.Invoke(() =>
                             {
                                 double percent = (currentRow / (double)totalRows) * 100;
@@ -408,73 +368,155 @@ namespace ServiceCenterApp
                             });
                         }
                     });
-                    progressContainer.Visibility = Visibility.Collapsed;
 
                     using var conn = DbHelper.GetConnection();
                     conn.Open();
 
-                    using (var transaction = conn.BeginTransaction()) // 🔥 wrap with transaction
+                    using (var transaction = conn.BeginTransaction())
                     {
                         foreach (var service in imported)
                         {
-                            var existing = conn.QueryFirstOrDefault<int>(
-                                "SELECT COUNT(*) FROM Services WHERE SerialNumber = @SerialNumber",
-                                new { service.SerialNumber },
-                                transaction: transaction // 🔥 penting
-                            );
+                            try
+                            {
+                                var existing = conn.QueryFirstOrDefault<int>(
+                                    "SELECT COUNT(*) FROM Services WHERE SerialNumber = @SerialNumber",
+                                    new { service.SerialNumber },
+                                    transaction: transaction);
 
-                            if (existing == 0)
-                            {
-                                conn.Execute(@"INSERT INTO Services 
-                (CustomerName, Item, SerialNumber, WarrantyStatus, Problem, Status,
-                 DateIn, ServiceDate, DateOut, ServiceLocation, Accessories, LastUpdated)
-                VALUES 
-                (@CustomerName, @Item, @SerialNumber, @WarrantyStatus, @Problem, @Status,
-                 @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @Accessories, @LastUpdated)",
-                                    service, transaction: transaction);
+                                if (existing == 0)
+                                {
+                                    conn.Execute(@"INSERT INTO Services 
+                                (CustomerName, Item, SerialNumber, WarrantyStatus, Problem, Status,
+                                DateIn, ServiceDate, DateOut, ServiceLocation, Accessories, LastUpdated)
+                                VALUES 
+                                (@CustomerName, @Item, @SerialNumber, @WarrantyStatus, @Problem, @Status,
+                                @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @Accessories, @LastUpdated)",
+                                        service, transaction: transaction);
+                                }
+                                else
+                                {
+                                    duplicateCount++;
+                                    conn.Execute(@"UPDATE Services SET
+                                CustomerName = @CustomerName,
+                                Item = @Item,
+                                WarrantyStatus = @WarrantyStatus,
+                                Problem = @Problem,
+                                Status = @Status,
+                                DateIn = @DateIn,
+                                ServiceDate = @ServiceDate,
+                                DateOut = @DateOut,
+                                ServiceLocation = @ServiceLocation,
+                                Accessories = @Accessories,
+                                LastUpdated = @LastUpdated
+                                WHERE SerialNumber = @SerialNumber",
+                                        service, transaction: transaction);
+                                }
                             }
-                            else
+                            catch (Exception ex)
                             {
-                                conn.Execute(@"UPDATE Services SET
-                CustomerName = @CustomerName,
-                Item = @Item,
-                WarrantyStatus = @WarrantyStatus,
-                Problem = @Problem,
-                Status = @Status,
-                DateIn = @DateIn,
-                ServiceDate = @ServiceDate,
-                DateOut = @DateOut,
-                ServiceLocation = @ServiceLocation,
-                Accessories = @Accessories,
-                LastUpdated = @LastUpdated
-                WHERE SerialNumber = @SerialNumber",
-                                    service, transaction: transaction);
+                                Debug.WriteLine($"Error processing row: {ex.Message}");
                             }
                         }
-
-                        transaction.Commit(); // 🔥 baru commit semua sekaligus
+                        transaction.Commit();
                     }
 
+                    // Tampilkan laporan detail
+                    string report = $"Total data diproses: {imported.Count}\n" +
+                                  $"Data baru ditambahkan: {imported.Count - duplicateCount}\n" +
+                                  $"Data diupdate: {duplicateCount}\n" +
+                                  $"Tanggal kosong: {emptyDateCount}";
+
+                    MessageBox.Show($"Import selesai!\n\n{report}", "Laporan Import",
+                                  MessageBoxButton.OK, MessageBoxImage.Information);
 
                     LoadServices();
-                    dgServices.UpdateLayout();
-                    foreach (var col in dgServices.Columns)
-                    {
-                        col.Width = new DataGridLength(1, DataGridLengthUnitType.Auto);
-                    }
-
-                    MessageBox.Show($"Berhasil import {imported.Count} data dari Excel!");
-                    progressBar.Value = 0;
-                    progressText.Text = "Progress: 0%";
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show("Gagal import: " + ex.Message);
                 }
+                finally
+                {
+                    progressContainer.Visibility = Visibility.Collapsed;
+                    progressBar.Value = 0;
+                    progressText.Text = "Progress: 0%";
+                }
             }
         }
 
+        private DateTime? ParseDateWithMultipleFormats(IXLCell cell)
+        {
+            if (cell == null || cell.IsEmpty()) return null;
 
+            string[] supportedFormats = new[]
+            {
+        "dd-MM-yyyy HH:mm:ss",
+        "dd/MM/yyyy HH:mm:ss",
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "MM/dd/yyyy HH:mm:ss", // Fallback untuk format US
+        "MM-dd-yyyy HH:mm:ss"  // Fallback lainnya
+    };
+
+            // Coba parse sebagai DateTime langsung
+            if (cell.DataType == XLDataType.DateTime)
+                return cell.GetDateTime();
+
+            // Coba parse sebagai string dengan berbagai format
+            if (DateTime.TryParseExact(cell.GetString(),
+                                     supportedFormats,
+                                     CultureInfo.InvariantCulture,
+                                     DateTimeStyles.None,
+                                     out var date))
+                return date;
+
+            // Coba parse numeric (Excel date value)
+            if (cell.DataType == XLDataType.Number)
+                return DateTime.FromOADate(cell.GetDouble());
+
+            return null;
+        }
+
+        // Fungsi parsing tanggal yang lebih robust
+        private DateTime? ParseExcelDate(IXLCell cell, ref int emptyCount)
+        {
+            if (cell == null || cell.IsEmpty())
+            {
+                emptyCount++;
+                return null;
+            }
+
+            try
+            {
+                // Coba parse sebagai DateTime langsung (jika Excel menyimpannya sebagai tipe DateTime)
+                if (cell.DataType == XLDataType.DateTime)
+                    return cell.GetDateTime();
+
+                // Coba parse sebagai string dengan format DD-MM-YYYY HH:MM:SS
+                if (DateTime.TryParseExact(cell.GetString(),
+                                         "dd-MM-yyyy HH:mm:ss",
+                                         CultureInfo.InvariantCulture,
+                                         DateTimeStyles.None,
+                                         out var date))
+                    return date;
+
+                // Fallback: Coba parse dengan format default
+                if (DateTime.TryParse(cell.GetString(), out date))
+                    return date;
+
+                // Coba parse sebagai numeric (Excel date value)
+                if (cell.DataType == XLDataType.Number)
+                    return DateTime.FromOADate(cell.GetDouble());
+
+                emptyCount++;
+                return null;
+            }
+            catch
+            {
+                emptyCount++;
+                return null;
+            }
+        }
 
         private void DeleteService_Click(object sender, RoutedEventArgs e)
         {
