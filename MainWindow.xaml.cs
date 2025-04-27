@@ -15,14 +15,17 @@ using System.Text;
 using ServiceCenterApp.Helpers;
 using System.Threading.Tasks;
 using System.Globalization;
+using System.Windows.Data;
+using System.Windows.Input;
 
 namespace ServiceCenterApp
 {
     public partial class MainWindow : Window
-    {
+    {   
         private DateTime? localLastUpdated = null;
         public MainWindow()
         {
+
             try
             {
                 InitializeComponent();
@@ -37,7 +40,6 @@ namespace ServiceCenterApp
             catch (Exception ex)
             {
                 MessageBox.Show($"Error initalizing window: {ex.Message}");
-                // Handle error atau close window
             }
 
             try
@@ -48,6 +50,7 @@ namespace ServiceCenterApp
             {
                 MessageBox.Show("Error saat load data: " + ex.Message);
             }
+
         }
 
         private DateTime? CheckLastUpdatedCloud()
@@ -78,7 +81,8 @@ namespace ServiceCenterApp
         }
 
 
-        private ObservableCollection<ServiceEntry> AllServices = new ObservableCollection<ServiceEntry>();
+        public List<ServiceEntry> OriginalServices = new List<ServiceEntry>(); // Ini buat data asli
+        public List<ServiceEntry> AllServices = new List<ServiceEntry>(); // Ini buat data aktif/tampil
         private ObservableCollection<ServiceEntry> FilteredServices = new ObservableCollection<ServiceEntry>();
         private void LoadData()
         {
@@ -153,7 +157,9 @@ namespace ServiceCenterApp
                     if (!availableColumns.Contains("SerialNumber")) service.SerialNumber = string.Empty;
                 }
 
-                AllServices = new ObservableCollection<ServiceEntry>(services);
+                OriginalServices = LoadAllServicesFromDatabase(); // atau apapun cara lo load
+                AllServices = new List<ServiceEntry>(OriginalServices); // clone data
+                dgServices.ItemsSource = AllServices;
                 localLastUpdated = AllServices.Max(s => s.LastUpdated);
 
                 // Cloud sync check with separate error handling
@@ -266,19 +272,24 @@ namespace ServiceCenterApp
                 using var workbook = new XLWorkbook();
                 var worksheet = workbook.Worksheets.Add("Services");
 
-                // Header (ditulis hanya sekali)
+                // Header with all columns
                 worksheet.Cell(1, 1).Value = "Customer Name";
                 worksheet.Cell(1, 2).Value = "Item";
                 worksheet.Cell(1, 3).Value = "Serial Number";
-                worksheet.Cell(1, 4).Value = "Warranty Status";
-                worksheet.Cell(1, 5).Value = "Problem";
-                worksheet.Cell(1, 6).Value = "Status";
-                worksheet.Cell(1, 7).Value = "Date In";
-                worksheet.Cell(1, 8).Value = "Service Date";
-                worksheet.Cell(1, 9).Value = "Date Out";
-                worksheet.Cell(1, 10).Value = "Service Location";
-                worksheet.Cell(1, 11).Value = "Accessories";
-                worksheet.Cell(1, 12).Value = "Last Updated";
+                worksheet.Cell(1, 4).Value = "CN/PN";
+                worksheet.Cell(1, 5).Value = "Warranty Status";
+                worksheet.Cell(1, 6).Value = "Problem";
+                worksheet.Cell(1, 7).Value = "Kerusakan H/S";
+                worksheet.Cell(1, 8).Value = "Status";
+                worksheet.Cell(1, 9).Value = "Status Unit Berada";
+                worksheet.Cell(1, 10).Value = "Date In";
+                worksheet.Cell(1, 11).Value = "Service Date";
+                worksheet.Cell(1, 12).Value = "Date Out";
+                worksheet.Cell(1, 13).Value = "Service Location";
+                worksheet.Cell(1, 14).Value = "Alamat Pengiriman";
+                worksheet.Cell(1, 15).Value = "Accessories";
+                worksheet.Cell(1, 16).Value = "Catatan Tambahan";
+                worksheet.Cell(1, 17).Value = "Last Updated";
 
                 using var conn = DbHelper.GetConnection();
                 var services = conn.Query<ServiceEntry>("SELECT * FROM Services").ToList();
@@ -289,17 +300,29 @@ namespace ServiceCenterApp
                     worksheet.Cell(row, 1).Value = s.CustomerName;
                     worksheet.Cell(row, 2).Value = s.Item;
                     worksheet.Cell(row, 3).Value = s.SerialNumber;
-                    worksheet.Cell(row, 4).Value = s.WarrantyStatus;
-                    worksheet.Cell(row, 5).Value = s.Problem;
-                    worksheet.Cell(row, 6).Value = s.Status;
-                    worksheet.Cell(row, 7).Value = s.DateIn?.ToString("dd-MM-yyyy");
-                    worksheet.Cell(row, 8).Value = s.ServiceDate?.ToString("dd-MM-yyyy");
-                    worksheet.Cell(row, 9).Value = s.DateOut?.ToString("dd-MM-yyyy");
-                    worksheet.Cell(row, 10).Value = s.ServiceLocation;
-                    worksheet.Cell(row, 11).Value = s.Accessories;
-                    worksheet.Cell(row, 12).Value = s.LastUpdated?.ToString("dd-MM-yyyy");
+                    worksheet.Cell(row, 4).Value = s.CnPn;
+                    worksheet.Cell(row, 5).Value = s.WarrantyStatus;
+                    worksheet.Cell(row, 6).Value = s.Problem;
+                    worksheet.Cell(row, 7).Value = s.HardwareSoftwareProblem;
+                    worksheet.Cell(row, 8).Value = s.Status;
+                    worksheet.Cell(row, 9).Value = s.UnitLocationStatus;
+                    worksheet.Cell(row, 10).Value = s.DateIn?.ToString("dd-MM-yyyy");
+                    worksheet.Cell(row, 11).Value = s.ServiceDate?.ToString("dd-MM-yyyy");
+                    worksheet.Cell(row, 12).Value = s.DateOut?.ToString("dd-MM-yyyy");
+                    worksheet.Cell(row, 13).Value = s.ServiceLocation;
+                    worksheet.Cell(row, 14).Value = s.ShippingAddress;
+                    worksheet.Cell(row, 15).Value = s.Accessories;
+                    worksheet.Cell(row, 16).Value = s.AdditionalNotes;
+                    worksheet.Cell(row, 17).Value = s.LastUpdated?.ToString("dd-MM-yyyy HH:mm:ss");
                     row++;
                 }
+
+                // Format date columns
+                for (int i = 10; i <= 12; i++)
+                {
+                    worksheet.Column(i).Style.NumberFormat.Format = "dd-MM-yyyy";
+                }
+                worksheet.Column(17).Style.NumberFormat.Format = "dd-MM-yyyy HH:mm:ss";
 
                 worksheet.Columns().AdjustToContents();
                 workbook.SaveAs(saveFileDialog.FileName);
@@ -325,6 +348,7 @@ namespace ServiceCenterApp
                     var imported = new List<ServiceEntry>();
                     int duplicateCount = 0;
                     int emptyDateCount = 0;
+                    int newCount = 0;
 
                     using var stream = new FileStream(openFileDialog.FileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                     using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
@@ -333,7 +357,7 @@ namespace ServiceCenterApp
                     int totalRows = rows.Count;
                     int currentRow = 0;
 
-                    progressContainer.Visibility = Visibility.Visible;
+                    progressBar.Visibility = Visibility.Visible;
                     progressBar.Value = 0;
                     progressText.Text = "Progress: 0%";
 
@@ -346,16 +370,25 @@ namespace ServiceCenterApp
                                 CustomerName = SafeGetString(row.Cell(1)),
                                 Item = SafeGetString(row.Cell(2)),
                                 SerialNumber = SafeGetString(row.Cell(3)),
-                                WarrantyStatus = SafeGetString(row.Cell(4)),
-                                Problem = SafeGetString(row.Cell(5)),
-                                Status = SafeGetString(row.Cell(6)),
-                                DateIn = ParseDateWithMultipleFormats(row.Cell(7)),
-                                ServiceDate = ParseDateWithMultipleFormats(row.Cell(8)),
-                                DateOut = ParseDateWithMultipleFormats(row.Cell(9)),
-                                ServiceLocation = SafeGetString(row.Cell(10)),
-                                Accessories = SafeGetString(row.Cell(11)),
-                                LastUpdated = DateTime.Now // Gunakan waktu sekarang sebagai last updated
+                                CnPn = SafeGetString(row.Cell(4)),
+                                WarrantyStatus = SafeGetString(row.Cell(5)),
+                                Problem = SafeGetString(row.Cell(6)),
+                                HardwareSoftwareProblem = SafeGetString(row.Cell(7)),
+                                Status = SafeGetString(row.Cell(8)),
+                                UnitLocationStatus = SafeGetString(row.Cell(9)),
+                                DateIn = ParseDateWithMultipleFormats(row.Cell(10)),
+                                ServiceDate = ParseDateWithMultipleFormats(row.Cell(11)),
+                                DateOut = ParseDateWithMultipleFormats(row.Cell(12)),
+                                ServiceLocation = SafeGetString(row.Cell(13)),
+                                ShippingAddress = SafeGetString(row.Cell(14)),
+                                Accessories = SafeGetString(row.Cell(15)),
+                                AdditionalNotes = SafeGetString(row.Cell(16)),
+                                LastUpdated = DateTime.Now
                             };
+
+                            if (entry.DateIn == null) emptyDateCount++;
+                            if (entry.ServiceDate == null) emptyDateCount++;
+                            if (entry.DateOut == null) emptyDateCount++;
 
                             imported.Add(entry);
 
@@ -385,12 +418,15 @@ namespace ServiceCenterApp
 
                                 if (existing == 0)
                                 {
+                                    newCount++;
                                     conn.Execute(@"INSERT INTO Services 
-                                (CustomerName, Item, SerialNumber, WarrantyStatus, Problem, Status,
-                                DateIn, ServiceDate, DateOut, ServiceLocation, Accessories, LastUpdated)
+                                (CustomerName, Item, SerialNumber, CnPn, WarrantyStatus, Problem, 
+                                HardwareSoftwareProblem, Status, UnitLocationStatus, DateIn, ServiceDate, 
+                                DateOut, ServiceLocation, ShippingAddress, Accessories, AdditionalNotes, LastUpdated)
                                 VALUES 
-                                (@CustomerName, @Item, @SerialNumber, @WarrantyStatus, @Problem, @Status,
-                                @DateIn, @ServiceDate, @DateOut, @ServiceLocation, @Accessories, @LastUpdated)",
+                                (@CustomerName, @Item, @SerialNumber, @CnPn, @WarrantyStatus, @Problem, 
+                                @HardwareSoftwareProblem, @Status, @UnitLocationStatus, @DateIn, @ServiceDate, 
+                                @DateOut, @ServiceLocation, @ShippingAddress, @Accessories, @AdditionalNotes, @LastUpdated)",
                                         service, transaction: transaction);
                                 }
                                 else
@@ -399,14 +435,19 @@ namespace ServiceCenterApp
                                     conn.Execute(@"UPDATE Services SET
                                 CustomerName = @CustomerName,
                                 Item = @Item,
+                                CnPn = @CnPn,
                                 WarrantyStatus = @WarrantyStatus,
                                 Problem = @Problem,
+                                HardwareSoftwareProblem = @HardwareSoftwareProblem,
                                 Status = @Status,
+                                UnitLocationStatus = @UnitLocationStatus,
                                 DateIn = @DateIn,
                                 ServiceDate = @ServiceDate,
                                 DateOut = @DateOut,
                                 ServiceLocation = @ServiceLocation,
+                                ShippingAddress = @ShippingAddress,
                                 Accessories = @Accessories,
+                                AdditionalNotes = @AdditionalNotes,
                                 LastUpdated = @LastUpdated
                                 WHERE SerialNumber = @SerialNumber",
                                         service, transaction: transaction);
@@ -420,11 +461,11 @@ namespace ServiceCenterApp
                         transaction.Commit();
                     }
 
-                    // Tampilkan laporan detail
+                    // Detailed report
                     string report = $"Total data diproses: {imported.Count}\n" +
-                                  $"Data baru ditambahkan: {imported.Count - duplicateCount}\n" +
+                                  $"Data baru ditambahkan: {newCount}\n" +
                                   $"Data diupdate: {duplicateCount}\n" +
-                                  $"Tanggal kosong: {emptyDateCount}";
+                                  $"Kolom tanggal kosong: {emptyDateCount}";
 
                     MessageBox.Show($"Import selesai!\n\n{report}", "Laporan Import",
                                   MessageBoxButton.OK, MessageBoxImage.Information);
@@ -437,7 +478,7 @@ namespace ServiceCenterApp
                 }
                 finally
                 {
-                    progressContainer.Visibility = Visibility.Collapsed;
+                    progressBar.Visibility = Visibility.Collapsed;
                     progressBar.Value = 0;
                     progressText.Text = "Progress: 0%";
                 }
@@ -475,47 +516,6 @@ namespace ServiceCenterApp
                 return DateTime.FromOADate(cell.GetDouble());
 
             return null;
-        }
-
-        // Fungsi parsing tanggal yang lebih robust
-        private DateTime? ParseExcelDate(IXLCell cell, ref int emptyCount)
-        {
-            if (cell == null || cell.IsEmpty())
-            {
-                emptyCount++;
-                return null;
-            }
-
-            try
-            {
-                // Coba parse sebagai DateTime langsung (jika Excel menyimpannya sebagai tipe DateTime)
-                if (cell.DataType == XLDataType.DateTime)
-                    return cell.GetDateTime();
-
-                // Coba parse sebagai string dengan format DD-MM-YYYY HH:MM:SS
-                if (DateTime.TryParseExact(cell.GetString(),
-                                         "dd-MM-yyyy HH:mm:ss",
-                                         CultureInfo.InvariantCulture,
-                                         DateTimeStyles.None,
-                                         out var date))
-                    return date;
-
-                // Fallback: Coba parse dengan format default
-                if (DateTime.TryParse(cell.GetString(), out date))
-                    return date;
-
-                // Coba parse sebagai numeric (Excel date value)
-                if (cell.DataType == XLDataType.Number)
-                    return DateTime.FromOADate(cell.GetDouble());
-
-                emptyCount++;
-                return null;
-            }
-            catch
-            {
-                emptyCount++;
-                return null;
-            }
         }
 
         private void DeleteService_Click(object sender, RoutedEventArgs e)
@@ -633,5 +633,80 @@ namespace ServiceCenterApp
             settingWindow.ShowDialog();
         }
 
+        private void FilterButton_Click(object sender, RoutedEventArgs e)
+        {
+            FilterWindow filterWindow = new FilterWindow(OriginalServices.ToList()); // <= ganti ini bro
+            if (filterWindow.ShowDialog() == true)
+            {
+                var filtered = OriginalServices.Where(s => // <= ini juga dari OriginalServices
+                    (filterWindow.SelectedCustomers.Count == 0 || filterWindow.SelectedCustomers.Contains(s.CustomerName)) &&
+                    (filterWindow.SelectedItems.Count == 0 || filterWindow.SelectedItems.Contains(s.Item)) &&
+                    (filterWindow.SelectedSerialNumbers.Count == 0 || filterWindow.SelectedSerialNumbers.Contains(s.SerialNumber)) &&
+                    (filterWindow.SelectedWarranty.Count == 0 || filterWindow.SelectedWarranty.Contains(s.WarrantyStatus)) &&
+                    (filterWindow.SelectedStatus.Count == 0 || filterWindow.SelectedStatus.Contains(s.Status)) &&
+                    (filterWindow.SelectedLocations.Count == 0 || filterWindow.SelectedLocations.Contains(s.ServiceLocation))
+                ).ToList();
+
+                AllServices = filtered;
+                dgServices.ItemsSource = AllServices;
+            }
+        }
+
+        private void ResetFilterButton_Click(object sender, RoutedEventArgs e)
+        {
+            ResetDataGrid();
+        }
+
+        private void ResetDataGrid()
+        {
+            AllServices = new List<ServiceEntry>(OriginalServices); // Copy ulang dari original
+            dgServices.ItemsSource = AllServices;
+        }
+
+
+        private void dgServices_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (dgServices.RowDetailsVisibilityMode == DataGridRowDetailsVisibilityMode.Collapsed)
+                dgServices.RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
+            else
+                dgServices.RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.Collapsed;
+        }
+        private List<ServiceEntry> LoadAllServicesFromDatabase()
+        {
+            try
+            {
+                using var conn = DbHelper.GetConnection();
+                conn.Open();
+                var services = conn.Query<ServiceEntry>("SELECT * FROM Services ORDER BY LastUpdated DESC").ToList();
+
+                // Tambahin inisialisasi RowNumber di sini!
+                for (int i = 0; i < services.Count; i++)
+                {
+                    services[i].RowNumber = i + 1;
+                }
+
+                return services;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading services from database: {ex.Message}");
+                return new List<ServiceEntry>();
+            }
+        }
+
+    }
+
+
+    public class NullToBoolConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return value != null; // Return true if not null
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

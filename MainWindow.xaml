@@ -1,120 +1,95 @@
 ﻿<Window 
-        x:Class="ServiceCenterApp.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av"
-        Title="Dashboard Servis" WindowState="Maximized" WindowStyle="SingleBorderWindow" av:DesignWidth="679.38">
+    x:Class="ServiceCenterApp.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:av="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="av"
+    Title="Dashboard Servis"
+    WindowState="Maximized"
+    WindowStyle="SingleBorderWindow"
+    av:DesignWidth="679.38">
+
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <Style x:Key="ServiceRowStyle" TargetType="DataGridRow">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Null}">
+                    <Setter Property="Background" Value="Transparent" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Masuk">
+                    <Setter Property="Background" Value="LightCoral" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Service">
+                    <Setter Property="Background" Value="Khaki" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="Keluar">
+                    <Setter Property="Background" Value="LightGreen" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
-    <Grid Margin="10">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <DockPanel Margin="10">
 
-        <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,10">
-            <!-- Tombol kiri -->
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                <Button Content="Tambah Servis" Click="AddService_Click" Width="125" Margin="0,0,10,0"/>
-
-                <!-- Search bar -->
+        <!-- Bagian atas: toolbar -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" HorizontalAlignment="Stretch" VerticalAlignment="Top">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                <Button Content="Tambah Servis" Click="AddService_Click" Margin="0,0,10,0" />
+                <Button Content="Filter" Click="FilterButton_Click" Margin="0,0,10,0" />
+                <Button Content="Reset Filter" Click="ResetFilterButton_Click" Margin="0,0,10,0" />
                 <Grid Width="200" VerticalAlignment="Center">
-                    <TextBox x:Name="SearchBox"
-             VerticalAlignment="Center"
-             TextChanged="SearchBox_TextChanged"
-             Padding="5,2,5,2"/>
-                    <TextBlock Text="Cari..." 
-               Foreground="Gray" 
-               Margin="8,0,0,0"
-               VerticalAlignment="Center"
-               IsHitTestVisible="False"
-               Visibility="{Binding Text.IsEmpty, ElementName=SearchBox, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    <Image Source="/Assets/search_icon.png" RenderTransformOrigin="-0.604,0.525" Margin="175,3,9,3"/>
+                    <TextBox x:Name="SearchBox" VerticalAlignment="Center" TextChanged="SearchBox_TextChanged" Padding="5,2,5,2"/>
+                    <TextBlock Text="Cari..." Foreground="Gray" Margin="8,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                               Visibility="{Binding Text.IsEmpty, ElementName=SearchBox, Converter={StaticResource BoolToVisibilityConverter}}" />
                 </Grid>
-
             </StackPanel>
 
-            <!-- Tombol kanan -->
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <Button Content="Setting" Click="Setting_Click" Margin="0,0,10,0"/>
-                <Button Content="Upload" Click="UploadDatabase_Click" Margin="0,0,10,0"/>
-                <Button Content="Download" Click="DownloadDatabase_Click" Margin="0,0,10,0"/>
-                <Button Content="Import Data" Click="ImportData_Click" Margin="0,0,10,0"/>
-                <Button Content="Export Data" Click="ExportData_Click"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Setting" Click="Setting_Click" Margin="20,0,10,0" />
+                <Button Content="Upload" Click="UploadDatabase_Click" Margin="0,0,10,0" />
+                <Button Content="Download" Click="DownloadDatabase_Click" Margin="0,0,10,0" />
+                <Button Content="Import Data" Click="ImportData_Click" Margin="0,0,10,0" />
+                <Button Content="Export Data" Click="ExportData_Click" />
             </StackPanel>
-        </DockPanel>
+        </StackPanel>
 
-        <StackPanel x:Name="progressContainer" Orientation="Vertical" Margin="-3,41,22,-7" Grid.Row="1" RenderTransformOrigin="0.499,-3.717" />
-        <ProgressBar x:Name="progressBar" Minimum="0" Maximum="100" Value="0" Margin="10,44,10,-18" Grid.Row="1" RenderTransformOrigin="0.534,0.57" />
-        <TextBlock x:Name="progressText" Text="Progress: 0%" Margin="283,44,0,-14" HorizontalAlignment="Left" Grid.Row="1" />
+        <!-- Bagian progress -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,10,0,10" VerticalAlignment="Top">
+            <ProgressBar x:Name="progressBar" Minimum="0" Maximum="100" Value="0" Width="200" Height="20" />
+            <TextBlock x:Name="progressText" Text="Progress: 0%" Margin="10,0,0,0" VerticalAlignment="Center" />
+        </StackPanel>
 
-        <DataGrid x:Name="dgServices" 
-          AutoGenerateColumns="False" 
-          CanUserAddRows="False" 
-          CanUserReorderColumns="False"
-          IsReadOnly="True"
-          HeadersVisibility="Column"
-          Grid.Row="1"
-          Margin="10"
-          HorizontalAlignment="Stretch"
-          VerticalScrollBarVisibility="Auto" 
-          HorizontalScrollBarVisibility="Auto"
-          SelectionChanged="dgServices_SelectionChanged">
+        <!-- DataGrid -->
+        <DataGrid x:Name="dgServices"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  CanUserReorderColumns="False"
+                  IsReadOnly="True"
+                  HeadersVisibility="Column"
+                  Margin="0"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch"
+                  RowStyle="{StaticResource ServiceRowStyle}"
+                  SelectionMode="Single"
+                  RowDetailsVisibilityMode="VisibleWhenSelected"
+                  MouseDoubleClick="dgServices_MouseDoubleClick"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Auto">
 
             <DataGrid.Columns>
-                <DataGridTextColumn Header="No." Binding="{Binding RowNumber}" Width="Auto" IsReadOnly="True" />
-
-                <DataGridTextColumn Header="Customer" Binding="{Binding CustomerName}" Width="2*">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="TextWrapping" Value="Wrap"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-
-                <DataGridTextColumn Header="Unit" Binding="{Binding Item}" Width="*">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="TextWrapping" Value="Wrap"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-
-                <DataGridTextColumn Header="Serial Number" Binding="{Binding SerialNumber}" Width="2*">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="TextWrapping" Value="Wrap"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-
+                <DataGridTextColumn Header="No." Binding="{Binding RowNumber}" Width="Auto" />
+                <DataGridTextColumn Header="Customer" Binding="{Binding CustomerName}" Width="2*" />
+                <DataGridTextColumn Header="Unit" Binding="{Binding Item}" Width="*" />
+                <DataGridTextColumn Header="Serial Number" Binding="{Binding SerialNumber}" Width="2*" />
                 <DataGridTextColumn Header="Warranty" Binding="{Binding WarrantyStatus}" Width="Auto" />
-
-                <DataGridTextColumn Header="Problem" Binding="{Binding Problem}" Width="2*">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="TextWrapping" Value="Wrap"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-
+                <DataGridTextColumn Header="Problem" Binding="{Binding Problem}" Width="2*" />
                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
-
                 <DataGridTextColumn Header="Tanggal Masuk" Binding="{Binding DateIn}" Width="*" />
                 <DataGridTextColumn Header="Tanggal Service" Binding="{Binding ServiceDate}" Width="*" />
                 <DataGridTextColumn Header="Tanggal Keluar" Binding="{Binding DateOut}" Width="*" />
                 <DataGridTextColumn Header="Lokasi" Binding="{Binding ServiceLocation}" Width="*" />
-
-                <DataGridTextColumn Header="Kelengkapan" Binding="{Binding Accessories}" Width="2*">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="TextWrapping" Value="Wrap"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-
+                <DataGridTextColumn Header="Kelengkapan" Binding="{Binding Accessories}" Width="2*" />
                 <DataGridTemplateColumn Header="Action" Width="160">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -126,6 +101,86 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
             </DataGrid.Columns>
+
+            <!-- RowDetails Ketika Klik Serial Number -->
+            <DataGrid.RowDetailsTemplate>
+                <DataTemplate>
+                    <Border BorderThickness="1" BorderBrush="Gray" Padding="10" Margin="5">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Row 0 -->
+                                <TextBlock Text="Nama Unit:" FontWeight="SemiBold" Grid.Row="0" Grid.Column="0"/>
+                                <TextBlock Text="{Binding Item}" Grid.Row="0" Grid.Column="1"/>
+                                <TextBlock Text="Serial Number:" FontWeight="SemiBold" Grid.Row="0" Grid.Column="2"/>
+                                <TextBlock Text="{Binding SerialNumber}" Grid.Row="0" Grid.Column="3"/>
+
+                                <!-- Row 1 -->
+                                <TextBlock Text="CN/PN:" FontWeight="SemiBold" Grid.Row="1" Grid.Column="0"/>
+                                <TextBlock Text="{Binding CnPn}" Grid.Row="1" Grid.Column="1"/>
+                                <TextBlock Text="Status Warranty:" FontWeight="SemiBold" Grid.Row="1" Grid.Column="2"/>
+                                <TextBlock Text="{Binding WarrantyStatus}" Grid.Row="1" Grid.Column="3"/>
+
+                                <!-- Row 2 -->
+                                <TextBlock Text="Nama Customer:" FontWeight="SemiBold" Grid.Row="2" Grid.Column="0"/>
+                                <TextBlock Text="{Binding CustomerName}" FontWeight="Bold" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"/>
+
+                                <!-- Row 3 -->
+                                <TextBlock Text="Kerusakan:" FontWeight="SemiBold" Grid.Row="3" Grid.Column="0"/>
+                                <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3"/>
+
+                                <!-- Row 4 -->
+                                <TextBlock Text="Kerusakan H/S:" FontWeight="SemiBold" Grid.Row="4" Grid.Column="0"/>
+                                <TextBlock Text="{Binding HardwareSoftwareProblem}" TextWrapping="Wrap" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3"/>
+
+                                <!-- Row 5 -->
+                                <TextBlock Text="Status:" FontWeight="SemiBold" Grid.Row="5" Grid.Column="0"/>
+                                <TextBlock Text="{Binding Status}" Grid.Row="5" Grid.Column="1"/>
+                                <TextBlock Text="Status Unit Berada:" FontWeight="SemiBold" Grid.Row="5" Grid.Column="2"/>
+                                <TextBlock Text="{Binding UnitLocationStatus}" Grid.Row="5" Grid.Column="3"/>
+
+                                <!-- Row 6 -->
+                                <TextBlock Text="Tanggal Masuk:" FontWeight="SemiBold" Grid.Row="6" Grid.Column="0"/>
+                                <TextBlock Text="{Binding DateIn}" Grid.Row="6" Grid.Column="1"/>
+                                <TextBlock Text="Tanggal Keluar:" FontWeight="SemiBold" Grid.Row="6" Grid.Column="2"/>
+                                <TextBlock Text="{Binding DateOut}" Grid.Row="6" Grid.Column="3"/>
+
+                                <!-- Row 7 -->
+                                <TextBlock Text="Alamat Pengiriman:" FontWeight="SemiBold" Grid.Row="7" Grid.Column="0"/>
+                                <TextBlock Text="{Binding ShippingAddress}" TextWrapping="Wrap" Grid.Row="7" Grid.Column="1" Grid.ColumnSpan="3"/>
+
+                                <!-- Row 8 -->
+                                <TextBlock Text="Kelengkapan Unit:" FontWeight="SemiBold" Grid.Row="8" Grid.Column="0"/>
+                                <TextBlock Text="{Binding Accessories}" TextWrapping="Wrap" Grid.Row="8" Grid.Column="1" Grid.ColumnSpan="3"/>
+
+                                <!-- Row 9 -->
+                                <TextBlock Text="Catatan Tambahan:" FontWeight="SemiBold" Grid.Row="9" Grid.Column="0"/>
+                                <TextBlock Text="{Binding AdditionalNotes}" TextWrapping="Wrap" Grid.Row="9" Grid.Column="1" Grid.ColumnSpan="3"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </DataGrid.RowDetailsTemplate>
+
         </DataGrid>
-    </Grid>
+
+    </DockPanel>
 </Window>

@@ -52,21 +52,26 @@ public static class DbHelper
                 // Create tables if they don't exist
                 conn.Execute(@"
                     CREATE TABLE IF NOT EXISTS Services (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        RowNumber INTEGER DEFAULT 0,
-                        CustomerName TEXT NOT NULL,
-                        Item TEXT NOT NULL,
-                        SerialNumber TEXT,
-                        WarrantyStatus TEXT,
-                        Accessories TEXT,
-                        Problem TEXT,
-                        Status TEXT,
-                        DateIn DATETIME,
-                        ServiceDate DATETIME,
-                        DateOut DATETIME,
-                        ServiceLocation TEXT,
-                        LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )");
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    RowNumber INTEGER DEFAULT 0,
+                    CustomerName TEXT NOT NULL,
+                    Item TEXT NOT NULL,
+                    SerialNumber TEXT,
+                    CnPn TEXT,
+                    WarrantyStatus TEXT,
+                    Accessories TEXT,
+                    Problem TEXT,
+                    HardwareSoftwareProblem TEXT,
+                    Status TEXT,
+                    UnitLocationStatus TEXT,
+                    DateIn DATETIME,
+                    ServiceDate DATETIME,
+                    DateOut DATETIME,
+                    ServiceLocation TEXT,
+                    ShippingAddress TEXT,
+                    AdditionalNotes TEXT,
+                    LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
 
                 // Add any missing columns to existing databases
                 if (!isNewDatabase)
@@ -151,41 +156,6 @@ public static class DbHelper
         }
     }
 
-
-    private static void InitDatabase()
-    {
-        using var conn = GetConnection();
-        conn.Open();
-
-        conn.Execute(@"
-        CREATE TABLE IF NOT EXISTS Services (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            RowNumber INTEGER,
-            CustomerName TEXT,
-            Item TEXT,
-            SerialNumber TEXT,
-            WarrantyStatus TEXT,
-            Accessories TEXT,
-            Problem TEXT,
-            Status TEXT,
-            DateIn DATETIME,
-            ServiceDate DATETIME,
-            DateOut DATETIME,
-            ServiceLocation TEXT,
-            LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-    ");
-
-        // Tambahkan pengecekan kolom untuk database yang sudah ada
-        AddMissingColumns(conn);
-
-        conn.Execute(@"
-        CREATE TABLE IF NOT EXISTS DbMeta (
-            Version INTEGER
-        );
-    ");
-    }
-
     public static void AddMissingColumns(SQLiteConnection conn)
     {
         var requiredColumns = new Dictionary<string, string>
@@ -226,20 +196,25 @@ public static class DbHelper
         {
             conn.Execute(@"
             CREATE TABLE Services (
-                Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                RowNumber INTEGER DEFAULT 0,
-                CustomerName TEXT NOT NULL,
-                Item TEXT NOT NULL,
-                SerialNumber TEXT UNIQUE,
-                WarrantyStatus TEXT,
-                Accessories TEXT,
-                Problem TEXT,
-                Status TEXT,
-                DateIn DATETIME,
-                ServiceDate DATETIME,
-                DateOut DATETIME,
-                ServiceLocation TEXT,
-                LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP
+                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    RowNumber INTEGER DEFAULT 0,
+                    CustomerName TEXT NOT NULL,
+                    Item TEXT NOT NULL,
+                    SerialNumber TEXT,
+                    CnPn TEXT,
+                    WarrantyStatus TEXT,
+                    Accessories TEXT,
+                    Problem TEXT,
+                    HardwareSoftwareProblem TEXT,
+                    Status TEXT,
+                    UnitLocationStatus TEXT,
+                    DateIn DATETIME,
+                    ServiceDate DATETIME,
+                    DateOut DATETIME,
+                    ServiceLocation TEXT,
+                    ShippingAddress TEXT,
+                    AdditionalNotes TEXT,
+                    LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP
             )");
         }
     }

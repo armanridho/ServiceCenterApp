@@ -167,6 +167,7 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="ViewModels\FilterWindow.xaml.cs" />
     <Compile Include="ViewModels\SettingWindow.xaml.cs" />
     <Page Include="Views\AddService.xaml">
       <Generator>MSBuild:Compile</Generator>
@@ -186,6 +187,9 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Page Include="Views\FilterWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Views\SettingWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
